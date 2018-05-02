@@ -23,6 +23,8 @@ public class SSHConnectionImpl implements DBConnection{
     private static Session session = null;
     private static Properties prop = null;
     private static int availablePort = 0;
+    private static final Logger logger =
+            LoggerFactory.getLogger(SSHConnection.class);
     
     public static void connectToServer(String dataBaseName) throws SQLException, IOException {
         connectSSH();
@@ -35,10 +37,9 @@ public class SSHConnectionImpl implements DBConnection{
         try {
             in = new FileInputStream("resources/dbconfig.properties");
             prop.load(in);
-            System.out.println();
             String sshHost = prop.getProperty("sshhost");
             String sshUser = prop.getProperty("sshuser");
-            String sshKeyFilepath = System.getProperty("user.dir") + prop.getProperty("sshheypath");
+            String sshKeyFilepath = System.getProperty("user.dir") + prop.getProperty("sshkeypath");
 
             availablePort = getAvailablePort(); // any free port can be used
             String remoteHost = prop.getProperty("mysqlhost");
@@ -54,15 +55,12 @@ public class SSHConnectionImpl implements DBConnection{
             prop.put("ConnectionAttempts", "3");
             session.setConfig(prop);
             session.connect();
-
-            System.out.println("SSH Connected");
-
+            logger.info("SSH Connected");
             Class.forName(driverName).newInstance();
 
             int assinged_port = session.setPortForwardingL(availablePort, remoteHost, remotePort);
 
-            System.out.println("localhost:" + assinged_port + " -> " + remoteHost + ":" + remotePort);
-            System.out.println("Port Forwarded");
+            logger.info("localhost:" + assinged_port + " -> " + remoteHost + ":" + remotePort);
         } catch (Exception e ) {
             e.printStackTrace();
         }
@@ -79,7 +77,6 @@ public class SSHConnectionImpl implements DBConnection{
         } catch (IOException e) {
             e.printStackTrace();
         }        
-        System.out.println(port+"--------");
         return port;
     }
 
@@ -99,8 +96,8 @@ public class SSHConnectionImpl implements DBConnection{
             dataSource.setDatabaseName(dataBaseName);
 
             connection = dataSource.getConnection();
-
-            System.out.print("Connection to server successful!:" + connection + "\n\n");
+            
+            logger.info("Connection to server successful!");
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -110,12 +107,12 @@ public class SSHConnectionImpl implements DBConnection{
     private static void closeConnections() {
         CloseDataBaseConnection();
         CloseSSHConnection();
+        logger.info("Closing Database Connection");
     }
 
     private static void CloseDataBaseConnection() {
         try {
             if (connection != null && !connection.isClosed()) {
-                System.out.println("Closing Database Connection");
                 connection.close();
             }
         } catch (SQLException e) {
@@ -126,7 +123,6 @@ public class SSHConnectionImpl implements DBConnection{
 
     private static void CloseSSHConnection() {
         if (session != null && session.isConnected()) {
-            System.out.println("Closing SSH Connection");
             session.disconnect();
         }
     }
@@ -140,16 +136,11 @@ public class SSHConnectionImpl implements DBConnection{
             connectToServer(dataBaseName);
             Statement stmt = connection.createStatement();
             resultSet = stmt.executeQuery(query);
-            System.out.println("Database connection success");
         } catch (SQLException e) {
             e.printStackTrace();
         }
-
         return resultSet;
     }
-
-
 }
     
 
-    

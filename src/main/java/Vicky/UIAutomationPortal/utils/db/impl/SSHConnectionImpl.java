@@ -1,11 +1,16 @@
 package utils.db.impl;
 
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.ServerSocket;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
@@ -16,61 +21,77 @@ import utils.db.DBConnection;
 public class SSHConnectionImpl implements DBConnection{
     private static Connection connection = null;
     private static Session session = null;
+    private static Properties prop = null;
+    private static int availablePort = 0;
     
-    private static void connectToServer(String dataBaseName) throws SQLException {
+    public static void connectToServer(String dataBaseName) throws SQLException, IOException {
         connectSSH();
         connectToDataBase(dataBaseName);
     }
 
-    private static void connectSSH() throws SQLException {
-        String sshHost = "mm-ts-next.chinaeast.cloudapp.chinacloudapi.cn";
-        String sshuser = "ubuntu";
-        String dbuserName = "";
-        String dbpassword = "";
-        String SshKeyFilepath = System.getProperty("user.dir") + "/resources/loadtesters_rsa-2.pem";
-
-        int localPort = 8740; // any free port can be used
-        String remoteHost = "127.0.0.1";
-        int remotePort = 3306;
-        String localSSHUrl = "localhost";
-        int sshPort = 1021;
-        /***************/
-        String driverName = "com.mysql.jdbc.Driver";
-
+    public static void connectSSH() throws SQLException {
+        InputStream in;
+        prop = new Properties();
         try {
-            java.util.Properties config = new java.util.Properties();
+            in = new FileInputStream("resources/dbconfig.properties");
+            prop.load(in);
+            System.out.println();
+            String sshHost = prop.getProperty("sshhost");
+            String sshUser = prop.getProperty("sshuser");
+            String sshKeyFilepath = System.getProperty("user.dir") + prop.getProperty("sshheypath");
+
+            availablePort = getAvailablePort(); // any free port can be used
+            String remoteHost = prop.getProperty("mysqlhost");
+            int remotePort = Integer.parseInt(prop.getProperty("mysqlport"));
+            int sshPort = Integer.parseInt(prop.getProperty("sshport"));
+       
+            String driverName = prop.getProperty("mysqldriver");
+            
             JSch jsch = new JSch();
-            session = jsch.getSession(sshuser, sshHost, sshPort);
-            jsch.addIdentity(SshKeyFilepath);
-            config.put("StrictHostKeyChecking", "no");
-            config.put("ConnectionAttempts", "3");
-            session.setConfig(config);
+            session = jsch.getSession(sshUser, sshHost, sshPort);
+            jsch.addIdentity(sshKeyFilepath);
+            prop.put("StrictHostKeyChecking", "no");
+            prop.put("ConnectionAttempts", "3");
+            session.setConfig(prop);
             session.connect();
 
             System.out.println("SSH Connected");
 
             Class.forName(driverName).newInstance();
 
-            int assinged_port = session.setPortForwardingL(localPort, remoteHost, remotePort);
+            int assinged_port = session.setPortForwardingL(availablePort, remoteHost, remotePort);
 
             System.out.println("localhost:" + assinged_port + " -> " + remoteHost + ":" + remotePort);
             System.out.println("Port Forwarded");
-        } catch (Exception e) {
+        } catch (Exception e ) {
             e.printStackTrace();
         }
     }
 
-    private static void connectToDataBase(String dataBaseName) throws SQLException {
-        String dbuserName = "root";
-        String dbpassword = "3nations";
-        int localPort = 8740; // any free port can be used
-        String localSSHUrl = "localhost";
+    private static int getAvailablePort() {
+        ServerSocket socket;
+        int port = 0;
         try {
+            socket = new ServerSocket(0);
+            socket.setReuseAddress(true);
+            port = socket.getLocalPort();
+            socket.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }        
+        System.out.println(port+"--------");
+        return port;
+    }
 
+    private static void connectToDataBase(String dataBaseName) throws SQLException {
+        String dbuserName = prop.getProperty("mysqluser");
+        String dbpassword = prop.getProperty("mysqlpassword");
+        String localSSHUrl = prop.getProperty("localsshurl");
+        try {
             //mysql database connectivity
             MysqlDataSource dataSource = new MysqlDataSource();
             dataSource.setServerName(localSSHUrl);
-            dataSource.setPortNumber(localPort);
+            dataSource.setPortNumber(availablePort);
             dataSource.setUser(dbuserName);
             dataSource.setAllowMultiQueries(true);
 
@@ -112,7 +133,7 @@ public class SSHConnectionImpl implements DBConnection{
 
 
     // works ONLY FOR  single query (one SELECT or one DELETE etc)
-    private static ResultSet executeMyQuery(String query, String dataBaseName) {
+    private static ResultSet executeMyQuery(String query, String dataBaseName) throws IOException {
         ResultSet resultSet = null;
 
         try {
@@ -127,7 +148,7 @@ public class SSHConnectionImpl implements DBConnection{
         return resultSet;
     }
 
-    public static void DeleteOrganisationReferencesFromDB(String organisationsLike) {
+    public static void DeleteOrganisationReferencesFromDB(String organisationsLike) throws IOException {
         try {
             connectToServer("ServerName");
             Statement stmt = connection.createStatement();
@@ -160,7 +181,7 @@ public class SSHConnectionImpl implements DBConnection{
         }
     }
 
-    public static List<String> getOrganisationsDBNamesBySubdomain(String organisationsLike) {
+    public static List<String> getOrganisationsDBNamesBySubdomain(String organisationsLike) throws IOException {
         List<String> organisationDbNames = new ArrayList<String>();
         ResultSet resultSet = executeMyQuery("select `DB`.organisation.dbname from `DB1`.organisation where subdomain like '" + organisationsLike + "%'", "DB1");
         try {
@@ -176,7 +197,7 @@ public class SSHConnectionImpl implements DBConnection{
         return organisationDbNames;
     }
 
-     public static List<String> getAllDBNames() {
+     public static List<String> getAllDBNames() throws IOException {
         // get all live db names incentral DB
         List<String> organisationDbNames = new ArrayList<String>();
         ResultSet resultSet = executeMyQuery("show databases", "DB1");
@@ -193,7 +214,7 @@ public class SSHConnectionImpl implements DBConnection{
         return organisationDbNames;
     }
 
-      public static void deleteDataBasesByName(List<String> DataBasesNamesList) {
+      public static void deleteDataBasesByName(List<String> DataBasesNamesList) throws IOException {
         try {
             connectSSH();
             int dataBasesAmount = DataBasesNamesList.size();
@@ -212,17 +233,8 @@ public class SSHConnectionImpl implements DBConnection{
             closeConnections();
         }
     }
-      
-      public static void main(String[] args) throws SQLException {
-//          connectToServer("mm");
-          String server = "mm";
-          String sql = "select brandcode from Brand \n" + 
-                  "order by brandcode asc limit 21,20";
-          ResultSet rs = executeMyQuery(sql, server);
-          while(rs.next()) {
-              System.out.println(rs.getString(1));
-          }
-          closeConnections();
-      }
+
 }
+    
+
     

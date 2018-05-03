@@ -19,35 +19,39 @@ import com.mysql.jdbc.jdbc2.optional.MysqlDataSource;
 import utils.db.DBConnection;
 
 public class SSHConnectionImpl implements DBConnection{
-    private static Connection connection = null;
+        private static Connection connection = null;
     private static Session session = null;
     private static Properties prop = null;
-    private static int availablePort = 0;
+    private static int forwardPort = 0;
     private static final Logger logger =
-            LoggerFactory.getLogger(SSHConnection.class);
+            LoggerFactory.getLogger(SSHConnectionImpl.class);
     
-    public static void connectToServer(String dataBaseName) throws SQLException, IOException {
-        connectSSH();
-        connectToDataBase(dataBaseName);
-    }
-
-    public static void connectSSH() throws SQLException {
+    /**
+     * connect DB via SSH
+     * @param dataBaseName
+     * @throws SQLException
+     * @throws IOException
+     */
+    public static void connectToDBViaSSH(String dataBaseName) throws SQLException, IOException {
         InputStream in;
         prop = new Properties();
         try {
             in = new FileInputStream("resources/dbconfig.properties");
             prop.load(in);
-            String sshHost = prop.getProperty("sshhost");
-            String sshUser = prop.getProperty("sshuser");
-            String sshKeyFilepath = System.getProperty("user.dir") + prop.getProperty("sshkeypath");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        connectSSH();
+        connectToDataBase(dataBaseName, forwardPort);
+    }
 
-            availablePort = getAvailablePort(); // any free port can be used
-            String remoteHost = prop.getProperty("mysqlhost");
-            int remotePort = Integer.parseInt(prop.getProperty("mysqlport"));
-            int sshPort = Integer.parseInt(prop.getProperty("sshport"));
-       
-            String driverName = prop.getProperty("mysqldriver");
-            
+    private static void connectSSH() throws SQLException {
+        try {
+            final String sshHost = prop.getProperty("sshhost");
+            final String sshUser = prop.getProperty("sshuser");
+            final String sshKeyFilepath = System.getProperty("user.dir") + prop.getProperty("sshkeypath");
+            final int sshPort = Integer.parseInt(prop.getProperty("sshport"));
+           
             JSch jsch = new JSch();
             session = jsch.getSession(sshUser, sshHost, sshPort);
             jsch.addIdentity(sshKeyFilepath);
@@ -56,10 +60,11 @@ public class SSHConnectionImpl implements DBConnection{
             session.setConfig(prop);
             session.connect();
             logger.info("SSH Connected");
-            Class.forName(driverName).newInstance();
-
-            int assinged_port = session.setPortForwardingL(availablePort, remoteHost, remotePort);
-
+                       
+            String remoteHost = prop.getProperty("remotehost");
+            int remotePort = Integer.parseInt(prop.getProperty("remoteport"));
+            forwardPort = getAvailablePort(); //need to forward to this port
+            int assinged_port = session.setPortForwardingL(forwardPort, remoteHost, remotePort);
             logger.info("localhost:" + assinged_port + " -> " + remoteHost + ":" + remotePort);
         } catch (Exception e ) {
             e.printStackTrace();
@@ -80,22 +85,30 @@ public class SSHConnectionImpl implements DBConnection{
         return port;
     }
 
-    private static void connectToDataBase(String dataBaseName) throws SQLException {
-        String dbuserName = prop.getProperty("mysqluser");
-        String dbpassword = prop.getProperty("mysqlpassword");
-        String localSSHUrl = prop.getProperty("localsshurl");
+    public static void connectToDataBase(String dbName) throws SQLException {
+        String mysqlUserName = prop.getProperty("mysqluser");
+        String mysqlPassword = prop.getProperty("mysqlpassword");
+        String mysqlPort = prop.getProperty("mysqlport");
+        String mysqlurl = prop.getProperty("mysqlurl") + ":" + mysqlPort + "/" + dbName;
         try {
             //mysql database connectivity
-            MysqlDataSource dataSource = new MysqlDataSource();
-            dataSource.setServerName(localSSHUrl);
-            dataSource.setPortNumber(availablePort);
-            dataSource.setUser(dbuserName);
-            dataSource.setAllowMultiQueries(true);
-
-            dataSource.setPassword(dbpassword);
-            dataSource.setDatabaseName(dataBaseName);
-
-            connection = dataSource.getConnection();
+            Class.forName(prop.getProperty("mysqldriver"));
+            connection = DriverManager.getConnection(mysqlurl, mysqlUserName, mysqlPassword);
+            
+            logger.info("Connection to server successful!");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    
+    private static void connectToDataBase(String dbName, int forwardPort) throws SQLException {
+        String mysqlUserName = prop.getProperty("mysqluser");
+        String mysqlPassword = prop.getProperty("mysqlpassword");
+        String mysqlurl = prop.getProperty("mysqlurl") + ":" + forwardPort + "/" + dbName;
+        try {
+            //mysql database connectivity
+            Class.forName(prop.getProperty("mysqldriver"));
+            connection = DriverManager.getConnection(mysqlurl, mysqlUserName, mysqlPassword);
             
             logger.info("Connection to server successful!");
         } catch (Exception e) {
@@ -103,8 +116,7 @@ public class SSHConnectionImpl implements DBConnection{
         }
     }
 
-
-    private static void closeConnections() {
+    public static void closeConnections() {
         CloseDataBaseConnection();
         CloseSSHConnection();
         logger.info("Closing Database Connection");
@@ -118,7 +130,6 @@ public class SSHConnectionImpl implements DBConnection{
         } catch (SQLException e) {
             e.printStackTrace();
         }
-
     }
 
     private static void CloseSSHConnection() {
@@ -127,20 +138,31 @@ public class SSHConnectionImpl implements DBConnection{
         }
     }
 
-
-    // works ONLY FOR  single query (one SELECT or one DELETE etc)
-    private static ResultSet executeMyQuery(String query, String dataBaseName) throws IOException {
+    public static ResultSet executeMyQuery(String query, String dataBaseName) throws IOException {
         ResultSet resultSet = null;
 
         try {
-            connectToServer(dataBaseName);
-            Statement stmt = connection.createStatement();
-            resultSet = stmt.executeQuery(query);
+            connectToDBViaSSH(dataBaseName);
+            PreparedStatement ps = connection.prepareStatement(query);
+            resultSet = ps.executeQuery();
         } catch (SQLException e) {
             e.printStackTrace();
         }
         return resultSet;
     }
-}
     
+    public static List<String> resultSetHandler (ResultSet resultSet) {
+        List<String> resultList = new ArrayList<String>();
+        
+        try {
+            while(resultSet.next()) {
+                resultList.add(resultSet.getString(1));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        
+        return resultList;
+    }
+}
 

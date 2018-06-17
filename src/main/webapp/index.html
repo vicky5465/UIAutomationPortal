@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Insert title here</title>
+<script
+	src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+<script type="text/javascript">
+	var platform, browser, suite,email, pwd
+	var testcase = [];
+	
+	
+	$(document).ready(function() {
+		loadIp();
+		loadSuite();
+	});
+
+	function loadIp() {
+		var testUrl = "/Automation/Service/ExportSuite";
+		$.ajax(testUrl, {
+			success : function(data) {
+				var ip = data.ip
+				$("div#ipaddr").append('<p>IP: ' + ip + '</p>');
+
+			}
+		});
+	}
+
+	function selectPlatform(val) {
+		platform = val.value;
+	/* 	alert("test platform: " + platform); */
+	}
+
+	function selectBrowser(val) {
+		browser = val.value;
+		/* alert("test browser: " + browser); */
+	}
+
+	function runCase() {
+		email = $('input#user').val();
+	
+		pwd = $('input#password').val();
+		if(testcase.length==0){
+			alert("please select test case")
+		}
+		if(platform==null){
+			alert("please select test platform")
+		}
+		if(browser==null){
+			alert("please select test browser")
+		}
+		if(email==""){		
+			alert("please enter test account")
+		}
+		if(pwd==""){
+			alert("please enter account password")
+		}
+				
+		if(testcase !=null &&platform!=null&&browser!=null&&email!=null && pwd!=null){
+		$.ajax({
+			type: "POST",
+			 contentType: "application/json; charset=utf-8",
+	        url: "/Automation/Service/GenerateTestCase",
+
+	        data: JSON.stringify({
+	        	name: testcase,
+	        	env: "staging",
+	        	platform: platform,
+	        	browser: browser,
+	        	email:email,
+				password:pwd  
+	        }),
+	        dataType: 'json',
+	        success: function(responseData, status, xhr) {
+	        	$('textarea#resultArea').val(responseData.result);
+	            console.log(responseData.result);
+	           
+	        },
+	        error: function(request, status, error) {
+	            console.log(request.responseText);
+	        }
+		});
+		alert("cases start running");
+		}else{
+			alert("please fill in the required info to start running test case!");
+		}
+	}
+
+	function addCase() {
+		//need to add if statement to check whether the cases has already been exist
+		var exeCases = testcase; 
+		$('div#exeCases').empty();
+		
+	/* 	if( $('div#exeCases').is(':empty') ) { */
+			
+		if(exeCases.length>0){
+			$('div#exeCases').append('<h2>Cases to run is: </h2>');
+			for(var i=0; i<exeCases.length; i++){			
+				$('div#exeCases').append('<p>'+exeCases[i]+'</p></h2>');
+			}
+		}else{
+			alert("please select test cases first!");
+		}
+/* 				'Case: <select onchange='+ caseSelected(this) +'> Please select a test case: </select>'); */
+/* 				'<option value="' + value + '">' + value
+						+ '</option>'); */
+		
+		
+	/* 	Case: <select onchange="caseSelected(this)">
+		<option id="selectcase" value="selectcase">Please select a test case: </option>
+		loadTestCase(selectedSuite); */
+		
+	}
+
+	function loadTestCase(suite) {
+		$('select#case option').remove().end(); 
+		$('select#case').append('<option value="selectcase">Please select a test case:</option>');
+
+		
+		var testUrl = "/Automation/Service/ExportTestCase?Suite="
+				+ suite;
+		$.ajax(testUrl, {
+			success : function(data) {
+				$.each(data.teseCase, function(key, value) {
+					$('select#case').append(
+							'<option value="' + value + '">' + value + '</option>');
+				});
+			}
+		});
+	}
+
+
+	function loadSuite() {
+		/* $('select#caseid option').remove().end(); */
+		var testUrl = "/Automation/Service/ExportSuite";
+		$.ajax(testUrl, {
+			success : function(data) {
+				$.each(data.suite, function(key, value) {
+					$('select#suite').append(
+							'<option value="' + value + '">' + value
+									+ '</option>');
+				});
+			}
+		});
+
+	}
+
+	function suiteSelected(val) {
+		suite = val.value;
+		loadTestCase(suite);
+	}
+	
+	function caseSelected(val) {
+		var caseSelected = val.value;
+		loadCaseDesc(caseSelected);
+		testcase.push(caseSelected);
+	}
+	
+	function loadCaseDesc(testcase){
+		var testUrl = "/Automation/Service/ExportTestCaseDesc?Case=" + testcase;
+		$.ajax(testUrl, {
+			success : function(data) {
+				var caseDesc = data.caseDesc;
+					$('textarea#caseDesc').val(caseDesc);
+			}
+		});
+	}
+</script>
+</head>
+<body>
+
+	<div>
+		<div id="ipaddr"></div>
+		Select Suite: <select id="suite" onchange="suiteSelected(this)">
+			<option id="selectSuite">Please select the test suite:</option>
+		</select>
+		<hr />
+
+<!-- this part is used to config the testing env, testing platform, browser and testing account -->
+		<div id="testEnv">
+		Please select test environment: <br/>
+		Right now all the tests will be run in the stage environment. Please select other testing configs! <br/>	
+			Test Platform: <select id="platform" onchange="selectPlatform(this)">
+				<option id="default" value="default">Please select the test
+					platform</option>
+				<option id="ios" value="ios">iOS</option>
+				<option id="android" value="android">Android</option>
+				<option id="web" value="web">Web</option>
+			</select> Browser: <select id="browser" onchange="selectBrowser(this)">
+				<option id="default" value="default">Please select the test
+					browser</option>
+				<option id="iosNavtive" value="iosNavtive">iOSNative</option>
+				<option id="androidNavtive" value="android">AndroidNative</option>
+				<option id="FF" value="FF">FireFox</option>
+				<option id="Chrome" value="Chrome">Chrome</option>
+			</select> Test Account: <input type="text" id="user" name="user" /> Test
+			Account Password: <input type="password" id="password"
+				name="password"/> 
+				
+				<br/>
+				<hr/>
+				</div>
+				<!-- this part is used to pick the test cases under the selected suites -->
+				<div id = "testCases">
+				Case: <select id="case" onchange="caseSelected(this)">
+				<option id="selectcase" value="selectcase">Please select a test case: </option>
+			</select> 
+			Case Description:
+			<textarea id ="caseDesc">
+	</textarea>
+				 <input type="button" id="addCase"
+				value="Add Cases to Run" onclick="addCase()" />
+				<div id='exeCases'></div>
+				<br/>
+				<input type="button" onclick="runCase()"
+				value="Run" />
+		</div>
+
+<!-- this is the part used to display the test execution result -->
+		<hr />
+		<div id="result">
+			Execution Result:<br />
+			<textarea id="resultArea">
+	</textarea>
+		</div>
+	</div>
+</body>
+</html>
